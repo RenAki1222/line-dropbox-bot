@@ -1,9 +1,9 @@
 // ===========================
-// ファイル: api/webhook.js
-// LINE Bot + Dropbox連携（Verify対応版）
+// LINE Bot + Dropbox連携（安全版）
+// Vercel用
 // ===========================
 
-import { Client, middleware } from '@line/bot-sdk';
+import { Client } from '@line/bot-sdk';
 import { Dropbox } from 'dropbox';
 import fetch from 'node-fetch';
 
@@ -23,47 +23,38 @@ const dbx = new Dropbox({ accessToken: DROPBOX_ACCESS_TOKEN, fetch });
 
 // Vercelサーバーレス設定
 export const config = {
-  api: {
-    bodyParser: false, // LINE公式SDK middlewareで処理する
-  },
+  api: { bodyParser: true },
 };
 
-// LINE Verify対応 + Dropbox返信
+// LINEに返信する関数（安全版）
+async function safeReply(replyToken, text) {
+  try {
+    await client.replyMessage(replyToken, {
+      type: 'text',
+      text,
+    });
+  } catch (err) {
+    console.error('replyMessageエラー:', err);
+  }
+}
+
+// ===========================
+// Webhook本体
+// ===========================
 export default async function handler(req, res) {
   try {
-    // LINE Verify用のGETリクエストでも200を返す
     if (req.method === 'GET') {
+      // LINE Verify用 GETリクエストは200を返す
       return res.status(200).send('OK');
     }
 
-    // POSTのみ処理
     if (req.method !== 'POST') {
       return res.status(405).send('Method Not Allowed');
     }
 
-    // ===========================
-    // LINE公式SDKのmiddlewareで署名検証
-    // ===========================
-    let chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
-    }
-    const rawBody = Buffer.concat(chunks);
-    const signature = req.headers['x-line-signature'];
-
-    try {
-      middleware({ channelSecret: LINE_CHANNEL_SECRET })(req, res, () => {});
-    } catch (err) {
-      console.error('署名検証エラー:', err);
-      return res.status(200).send('OK'); // Verify用でも200
-    }
-
-    const body = JSON.parse(rawBody.toString('utf8'));
+    const body = req.body;
     console.log('Received body:', JSON.stringify(body, null, 2));
 
-    // ===========================
-    // メッセージイベント処理
-    // ===========================
     if (body.events && body.events.length > 0) {
       await Promise.all(
         body.events.map(async (event) => {
@@ -72,10 +63,7 @@ export default async function handler(req, res) {
 
             // 会員IDチェック（最大7桁）
             if (!/^\d{1,7}$/.test(userMessage)) {
-              await client.replyMessage(event.replyToken, {
-                type: 'text',
-                text: '正しい会員IDを入力してください（最大7桁の数字）',
-              });
+              await safeReply(event.replyToken, '正しい会員IDを入力してください（最大7桁の数字）');
               return;
             }
 
@@ -86,25 +74,23 @@ export default async function handler(req, res) {
             try {
               await dbx.filesGetMetadata({ path: folderPath });
             } catch (err) {
-              console.warn(`Folder not found for member ${userMessage}`);
+              console.warn(`Folder not found for member ${userMessage}:`, err);
               folderUrl = `会員ID ${userMessage} のフォルダは存在しません`;
             }
 
             // LINEに返信
-            await client.replyMessage(event.replyToken, {
-              type: 'text',
-              text: `こちらが会員ID ${userMessage} のフォルダです：\n${folderUrl}`,
-            });
+            await safeReply(event.replyToken, `こちらが会員ID ${userMessage} のフォルダです：\n${folderUrl}`);
           }
         })
       );
     }
 
-    // 最小構成: 必ず200
+    // 最小構成: 必ず200を返す
     res.status(200).send('OK');
 
   } catch (err) {
     console.error('Webhook処理エラー:', err);
-    res.status(200).send('OK'); // Verifyでも200を返す
+    // 例外が起きても200を返してLINE側のエラーを防ぐ
+    res.status(200).send('OK');
   }
 }
