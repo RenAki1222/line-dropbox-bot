@@ -5,6 +5,12 @@ import fetch from 'node-fetch';
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
+
 // line-dropbox-bot/api/webhook.js
 export default async function handler(req, res) {
   if (req.method === 'POST') {
