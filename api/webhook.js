@@ -1,19 +1,19 @@
 // ===========================
 // ファイル: api/webhook.js
-// 目的: LINEボットWebhook（最小構成）
-// - POSTを受けて必ず200を返す
-// - 最大7桁の会員IDを受け取りDropboxリンクを返信
+// 目的: LINEボットWebhook（Dropbox連携版）
 // ===========================
 
+import { Dropbox } from 'dropbox';
 import fetch from 'node-fetch';
 
 // 環境変数
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+const DROPBOX_ACCESS_TOKEN = process.env.DROPBOX_ACCESS_TOKEN;
 
 // Vercelサーバーレス設定
 export const config = {
   api: {
-    bodyParser: true, // JSONを受け取るために必要
+    bodyParser: true,
   },
 };
 
@@ -31,6 +31,9 @@ async function replyMessage(replyToken, text) {
     }),
   });
 }
+
+// Dropboxクライアント
+const dbx = new Dropbox({ accessToken: DROPBOX_ACCESS_TOKEN, fetch });
 
 // ===========================
 // Webhook本体
@@ -59,10 +62,23 @@ export default async function handler(req, res) {
               return;
             }
 
-            // Dropboxリンク生成
-            const dropboxBaseUrl = 'https://www.dropbox.com/home/members/';
-            const folderUrl = `${dropboxBaseUrl}${userMessage}`;
+            // ===========================
+            // Dropboxフォルダ存在確認
+            // ===========================
+            const folderPath = `/members/${userMessage}`; // App Folder内
+            let folderUrl = `https://www.dropbox.com/home${folderPath}`; // デフォルトURL
 
+            try {
+              const metadata = await dbx.filesGetMetadata({ path: folderPath });
+              if (metadata) {
+                folderUrl = `https://www.dropbox.com/home${folderPath}`;
+              }
+            } catch (err) {
+              console.warn(`Folder not found for member ${userMessage}`);
+              folderUrl = `会員ID ${userMessage} のフォルダは存在しません`;
+            }
+
+            // LINEに返信
             await replyMessage(
               event.replyToken,
               `こちらが会員ID ${userMessage} のフォルダです：\n${folderUrl}`
@@ -72,9 +88,7 @@ export default async function handler(req, res) {
       );
     }
 
-    // ===========================
-    // 最小構成: LINEに必ず200を返す
-    // ===========================
+    // 最小構成: 必ず200を返す
     res.status(200).send('OK');
 
   } catch (err) {
