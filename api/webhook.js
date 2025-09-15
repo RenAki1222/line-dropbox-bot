@@ -1,68 +1,113 @@
-/*import { json } from 'micro';
+// ===========================
+// ファイル: api/webhook.js
+// 目的: LINEボットWebhook
+// - POSTを受け取り200を返す最小構成を保持
+// - 最大7桁の会員IDを受け取りDropboxリンクを返信
+// ===========================
+
 import crypto from 'crypto';
 import fetch from 'node-fetch';
 
+// ===========================
+// 環境変数
+// ===========================
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
+// ===========================
+// Vercel用サーバーレス設定
+// ===========================
 export const config = {
   api: {
-    bodyParser: true,
+    bodyParser: true, // JSON受信のため必須
   },
 };
 
-// line-dropbox-bot/api/webhook.js
+// ===========================
+// サーバーレス関数本体
+// ===========================
 export default async function handler(req, res) {
-  if (req.method === 'POST') {
-    console.log(body); // デバッグ用
-    res.status(200).send('OK'); // LINEに必ず200を返す
-  } else {
-    res.status(405).send('Method Not Allowed');
-  }
-}
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
-  }
-
-  const body = await json(req);
-  const signature = req.headers['x-line-signature'];
-
-  // 署名チェック
-  const hash = crypto
-    .createHmac('SHA256', LINE_CHANNEL_SECRET)
-    .update(JSON.stringify(body))
-    .digest('base64');
-
-  if (hash !== signature) {
-    return res.status(403).send('Invalid signature');
-  }
-
   try {
-    const event = body.events[0];
-    const userMessage = event.message.text;
-
-    // 会員IDが7桁以内かチェック
-    const memberId = userMessage.trim();
-    if (!/^\d{1,7}$/.test(memberId)) {
-      await replyMessage(event.replyToken, '正しい会員IDを入力してください（最大7桁の数字）');
-      return res.status(200).send('OK');
+    // ===========================
+    // POST以外は405を返す
+    // ===========================
+    if (req.method !== 'POST') {
+      return res.status(405).send('Method Not Allowed');
     }
 
-    // DropboxフォルダURLを生成（例）
-    const dropboxBaseUrl = 'https://www.dropbox.com/home/members/';
-    const folderUrl = `${dropboxBaseUrl}${memberId}`;
+    // ===========================
+    // 受信JSON
+    // ===========================
+    const body = req.body;
+    console.log('Received body:', JSON.stringify(body, null, 2));
 
-    await replyMessage(event.replyToken, `こちらが会員ID ${memberId} のフォルダです：\n${folderUrl}`);
+    // ===========================
+    // LINE署名検証
+    // ===========================
+    const signature = req.headers['x-line-signature'] || '';
+    const hash = crypto
+      .createHmac('SHA256', LINE_CHANNEL_SECRET)
+      .update(JSON.stringify(body))
+      .digest('base64');
+
+    if (hash !== signature) {
+      console.warn('Invalid signature');
+      return res.status(403).send('Invalid signature');
+    }
+
+    // ===========================
+    // イベント処理（複数イベントに対応）
+    // ===========================
+    if (body.events && body.events.length > 0) {
+      await Promise.all(
+        body.events.map(async (event) => {
+          // メッセージタイプがテキストのみ処理
+          if (event.type === 'message' && event.message.type === 'text') {
+            const userMessage = event.message.text.trim();
+
+            // ===========================
+            // 会員IDチェック（最大7桁の数字）
+            // ===========================
+            if (!/^\d{1,7}$/.test(userMessage)) {
+              await replyMessage(
+                event.replyToken,
+                '正しい会員IDを入力してください（最大7桁の数字）'
+              );
+              return;
+            }
+
+            // ===========================
+            // Dropboxリンク生成
+            // ===========================
+            const dropboxBaseUrl = 'https://www.dropbox.com/home/members/';
+            const folderUrl = `${dropboxBaseUrl}${userMessage}`;
+
+            // ===========================
+            // LINEに返信
+            // ===========================
+            await replyMessage(
+              event.replyToken,
+              `こちらが会員ID ${userMessage} のフォルダです：\n${folderUrl}`
+            );
+          }
+        })
+      );
+    }
+
+    // ===========================
+    // 最小構成: LINEに必ず200を返す
+    // ===========================
     res.status(200).send('OK');
-  } catch (error) {
-    console.error(error);
+
+  } catch (err) {
+    console.error('Error handling webhook:', err);
     res.status(500).send('Internal Server Error');
   }
 }
 
+// ===========================
 // LINEに返信する関数
+// ===========================
 async function replyMessage(replyToken, text) {
   const url = 'https://api.line.me/v2/bot/message/reply';
   const headers = {
@@ -79,25 +124,4 @@ async function replyMessage(replyToken, text) {
     headers,
     body,
   });
-}*/
-
-// api/webhook.js
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-};
-
-export default async function handler(req, res) {
-  try {
-    if (req.method === 'POST') {
-      console.log('Received body:', req.body); // デバッグ用
-      res.status(200).send('OK');             // LINEに必ず200を返す
-    } else {
-      res.status(405).send('Method Not Allowed');
-    }
-  } catch (err) {
-    console.error('Error:', err);
-    res.status(500).send('Internal Server Error');
-  }
 }
