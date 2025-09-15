@@ -8,7 +8,6 @@ const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 // line-dropbox-bot/api/webhook.js
 export default async function handler(req, res) {
   if (req.method === 'POST') {
-    const body = req.body;
     console.log(body); // デバッグ用
     res.status(200).send('OK'); // LINEに必ず200を返す
   } else {
