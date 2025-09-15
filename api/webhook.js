@@ -1,14 +1,19 @@
-import crypto from 'crypto';
+// ===========================
+// ファイル: api/webhook.js
+// 目的: LINEボットWebhook（最小構成）
+// - POSTを受けて必ず200を返す
+// - 最大7桁の会員IDを受け取りDropboxリンクを返信
+// ===========================
+
 import fetch from 'node-fetch';
 
 // 環境変数
-const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
-// Vercel用設定: bodyParser falseにして生データを取得
+// Vercelサーバーレス設定
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: true, // JSONを受け取るために必要
   },
 };
 
@@ -27,44 +32,18 @@ async function replyMessage(replyToken, text) {
   });
 }
 
+// ===========================
+// Webhook本体
+// ===========================
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
       return res.status(405).send('Method Not Allowed');
     }
 
-    // ===========================
-    // 生のリクエストボディを取得
-    // ===========================
-    const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
-    }
-    const rawBody = Buffer.concat(chunks);
-    const signature = req.headers['x-line-signature'];
-
-    // ===========================
-    // 署名検証
-    // ===========================
-    const hash = crypto
-      .createHmac('SHA256', LINE_CHANNEL_SECRET)
-      .update(rawBody)
-      .digest('base64');
-
-    if (hash !== signature) {
-      console.warn('Invalid signature');
-      return res.status(403).send('Invalid signature');
-    }
-
-    // ===========================
-    // JSONに変換
-    // ===========================
-    const body = JSON.parse(rawBody.toString('utf8'));
+    const body = req.body;
     console.log('Received body:', JSON.stringify(body, null, 2));
 
-    // ===========================
-    // イベント処理
-    // ===========================
     if (body.events && body.events.length > 0) {
       await Promise.all(
         body.events.map(async (event) => {
@@ -80,8 +59,10 @@ export default async function handler(req, res) {
               return;
             }
 
+            // Dropboxリンク生成
             const dropboxBaseUrl = 'https://www.dropbox.com/home/members/';
             const folderUrl = `${dropboxBaseUrl}${userMessage}`;
+
             await replyMessage(
               event.replyToken,
               `こちらが会員ID ${userMessage} のフォルダです：\n${folderUrl}`
@@ -92,9 +73,10 @@ export default async function handler(req, res) {
     }
 
     // ===========================
-    // 最小構成: 必ず200を返す
+    // 最小構成: LINEに必ず200を返す
     // ===========================
     res.status(200).send('OK');
+
   } catch (err) {
     console.error('Error handling webhook:', err);
     res.status(500).send('Internal Server Error');
