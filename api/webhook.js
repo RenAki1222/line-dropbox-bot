@@ -1,4 +1,4 @@
-import { json } from 'micro';
+/*import { json } from 'micro';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
 
@@ -79,4 +79,25 @@ async function replyMessage(replyToken, text) {
     headers,
     body,
   });
+}*/
+
+// api/webhook.js
+export const config = {
+  api: {
+    bodyParser: true,
+  },
+};
+
+export default async function handler(req, res) {
+  try {
+    if (req.method === 'POST') {
+      console.log('Received body:', req.body); // デバッグ用
+      res.status(200).send('OK');             // LINEに必ず200を返す
+    } else {
+      res.status(405).send('Method Not Allowed');
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    res.status(500).send('Internal Server Error');
+  }
 }
